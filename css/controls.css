@@ -1,0 +1,20 @@
+.chartControls {
+  border: 1px darkblue solid;
+  border-radius: 0.5em;
+  background-color: aliceblue;
+  padding: 0.5em;
+  margin: 0.5em;
+}
+
+.chartControls h1 {
+  font-size: 1.5em;
+}
+
+#pagetitle {
+  font-size: 2em;
+  margin: 0.5em;
+}
+
+.chart {
+  margin: 100px, 100px, 100px, 100px
+}

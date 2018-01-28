@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <!-- Required meta tags -->
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+    <!-- Bootstrap CSS -->
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
+    <link rel="stylesheet" href="./css/controls.css">
+
+    <title>Retry Viz</title>
+  </head>
+  <body style="padding: 0% 25%">
+    <h1 id="pagetitle">Retry Strategies Visualization</h1>
+
+    <!-- Optional JavaScript -->
+    <!-- jQuery first, then Popper.js, then Bootstrap JS -->
+    <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.7.1/Chart.bundle.min.js" integrity="sha256-N4u5BjTLNwmGul6RgLoESPNqDFVUibVuOYhP4gJgrew=" crossorigin="anonymous"></script>
+
+    <script src="./scripts/retries.js"></script>
+
+
+    <div>
+      <div class='chartControls'>
+        <h1>Total time</h1>
+        <label>
+          In Seconds:
+        </label>
+        <input type="number" value="300" id="maxRetryTimeout"/>
+        <input type="button" onclick="loadCharts()" value="reload"/>
+      </div>
+      <div class='chartControls'>
+        <h1>Constant</h1>
+        <label>
+          Interval:
+        </label>
+        <input type="number" value="10" id="constantInterval"/>
+        <input type="button" onclick="loadCharts()" value="reload"/>
+      </div>
+      <div class='chartControls'>
+        <h1>Linear</h1>
+        <label>
+          Increment:
+        </label>
+        <input type="number" value="10" id="linearIncrement"/>
+        <input type="button" onclick="loadCharts()" value="reload"/>
+      </div>
+      <div class='chartControls'>
+        <h1>Linear With Jitter</h1>
+        <label>
+          Increment:
+        </label>
+        <input type="number" value="10" id="linearWithJitterIncrement"/>
+        <label>
+          Minimum Jitter:
+        </label>
+        <input type="number" value="10" id="linearWithJitterMinJitter"/>
+        <label>
+          Maximum Jitter:
+        </label>
+        <input type="number" value="20" id="linearWithJitterMaxJitter"/>
+        <input type="button" onclick="loadCharts()" value="reload"/>
+      </div>
+      <div class='chartControls'>
+        <h1>Exponential Backoff With Jitter</h1>
+        <label>
+            C:
+        </label>
+        <input type="number" value="1" id="expC"/>
+        <label>
+          C_Min:
+        </label>
+        <input type="number" value="10" id="expCMin"/>
+        <label>
+          C_Max:
+        </label>
+        <input type="number" value="50" id="expCMax"/>
+        <label>
+          J_U:
+        </label>
+        <input type="number" value="20" id="expJu"/>
+        <label>
+          J_D:
+        </label>
+        <input type="number" value="5" id="expJd"/>
+          <input type="button" onclick="loadCharts()" value="reload"/>
+        </div>
+    </div>
+
+
+    <div class="chart">
+      <canvas id="retryIntervalChart" height="100"></canvas>
+      <canvas id="retryOverTimeChart" height="50"></canvas>
+      <canvas id="deviceRetriesOverTimeChart" height="100"></canvas>
+    </div>
+    <script>
+      function loadCharts() {
+        var generateIntervalData = function (chartName, policy, retryTimeout) {
+          var intervals = generateIntervalsOverTime(policy, retryTimeout);
+
+          return {
+            name: chartName,
+            retryCount: intervals.length,
+            waitTimes: intervals.map(function (interval) { return interval.waitTime; }),
+            actualTimes: intervals.map(function (interval) { return interval.actualTime; })
+          }
+        }
+
+        var generateLinearGrowthIntervalData = function (increment, retryTimeout) {
+          var policy = new LinearRetryPolicy(increment);
+          return generateIntervalData('linear', policy, retryTimeout);
+        };
+
+        var generateConstantIntervalData = function (interval, retryTimeout) {
+          var policy = new ConstantRetryPolicy(interval);
+          return generateIntervalData('constant', policy, retryTimeout);
+        }
+
+        var generateLinearWithJitterGrowthIntervalData = function (increment, j_min, j_max, retryTimeout) {
+          var policy = new LinearWithJitterRetryPolicy(increment, j_min, j_max);
+          return generateIntervalData('linear with jitter', policy, retryTimeout);
+        };
+
+
+        var generateExpBackoffWithJitterIntervalData = function (c, c_min, c_max, j_u, j_d, retryTimeout) {
+          var policy = new ExponentialBackoffWithJitterRetryPolicy(c, c_min, c_max, j_u, j_d);
+          return generateIntervalData('exponential backoff with jitter', policy, retryTimeout);
+        };
+
+        // comparison of retry interval growth
+        var retryIntervalChart = document.getElementById("retryIntervalChart").getContext('2d');
+        var maxRetryTimeout = parseInt(document.getElementById("maxRetryTimeout").value);
+
+        var linearIncrement = parseInt(document.getElementById("linearIncrement").value);
+        var linearChartData = generateLinearGrowthIntervalData(linearIncrement, maxRetryTimeout);
+
+        var constantInterval = parseInt(document.getElementById("constantInterval").value);
+        var constantChartData = generateConstantIntervalData(constantInterval, maxRetryTimeout);
+
+        var linearWithJitterIncrement = parseInt(document.getElementById("linearWithJitterIncrement").value);
+        var linearWithJitterMinJitter = parseInt(document.getElementById("linearWithJitterMinJitter").value);
+        var linearWithJitterMaxJitter = parseInt(document.getElementById("linearWithJitterMaxJitter").value);
+        var linearWithJitterChartData = generateLinearWithJitterGrowthIntervalData(linearWithJitterIncrement, linearWithJitterMinJitter, linearWithJitterMaxJitter, maxRetryTimeout);
+
+
+        var expC = parseInt(document.getElementById("expC").value);
+        var expCMin = parseInt(document.getElementById("expCMin").value);
+        var expCMax = parseInt(document.getElementById("expCMax").value);
+        var expJu = parseInt(document.getElementById("expJu").value);
+        var expJd = parseInt(document.getElementById("expJd").value);
+        var expBackoffWithJitterWithJitterChartData = generateExpBackoffWithJitterIntervalData(expC, expCMin, expCMax, expJd, expJu, maxRetryTimeout);
+
+        var max_retries = Math.max(linearChartData.retryCount, constantChartData.retryCount);
+
+        var retryCountScale = [];
+        for (var i = 0; i <= max_retries; i++) {
+          retryCountScale.push(i);
+        }
+
+        var c1 = new Chart(retryIntervalChart, {
+            type: 'line',
+            data: {
+                labels: retryCountScale,
+                datasets: [{
+                    label: linearChartData.name,
+                    data: linearChartData.waitTimes,
+                    borderColor: '#00FF00FF',
+                    backgroundColor: '#00000000'
+                },{
+                    label: constantChartData.name,
+                    data: constantChartData.waitTimes,
+                    borderColor: '#0000FFFF',
+                    backgroundColor: '#00000000'
+                },{
+                    label: linearWithJitterChartData.name,
+                    data: linearWithJitterChartData.waitTimes,
+                    borderColor: '#FF0000FF',
+                    backgroundColor: '#00000000'
+                },{
+                    label: expBackoffWithJitterWithJitterChartData.name,
+                    data: expBackoffWithJitterWithJitterChartData.waitTimes,
+                    borderColor: '#FFFF00FF',
+                    backgroundColor: '#00000000'
+                }]
+            }
+        });
+
+        // Comparison of retry intervals over time
+        var retryOverTimeChart = document.getElementById("retryOverTimeChart").getContext('2d');
+
+        var timeScale = [];
+        for (var i = 0; i <= maxRetryTimeout; i++) {
+          timeScale.push(i);
+        }
+
+        var createDataSet = function (sourceData, yIndex) {
+          var dataSet = [];
+          var retryIndex = 0;
+          while(sourceData.actualTimes[retryIndex] <= maxRetryTimeout) {
+            dataSet.push({
+              x: sourceData.actualTimes[retryIndex],
+              y: yIndex
+            });
+            retryIndex++;
+          }
+
+          return dataSet;
+        }
+
+        var constantDataSet = createDataSet(constantChartData, 1);
+        var linearDataSet = createDataSet(linearChartData, 2);
+        var linearWithJitterDataSet = createDataSet(linearWithJitterChartData, 3);
+        var expBackoffWithJitterDataSet = createDataSet(expBackoffWithJitterWithJitterChartData, 4);
+
+        var c2 = Chart.Scatter(retryOverTimeChart, {
+            data: {
+                labels: timeScale,
+                datasets: [{
+                    label: linearChartData.name,
+                    data: linearDataSet,
+                    borderColor: '#00FF00FF',
+                },{
+                    label: constantChartData.name,
+                    data: constantDataSet,
+                    borderColor: '#0000FFFF',
+                },{
+                    label: linearWithJitterChartData.name,
+                    data: linearWithJitterDataSet,
+                    borderColor: '#FF0000FF',
+                },{
+                    label: expBackoffWithJitterWithJitterChartData.name,
+                    data: expBackoffWithJitterDataSet,
+                    borderColor: '#FFFF00FF',
+                }]
+            },
+            options: {
+              scales: {
+                xAxes: [{
+                  type: 'linear',
+                  position: 'bottom'
+                }],
+                yAxes: [{
+                    ticks: {
+                        min: 0,
+                        max: 5,
+                        stepSize: 1
+                    }
+                }]
+              }
+            }
+        });
+
+        // Devices Chart
+        var DEVICE_COUNT = 100;
+
+        var deviceData = [];
+        for (var deviceIndex = 0; deviceIndex < DEVICE_COUNT; deviceIndex++) {
+          var deviceDataSet = [];
+          var retryIndex = 0;
+          var chartData = generateLinearWithJitterGrowthIntervalData(10, 1, 10, maxRetryTimeout);
+          while(chartData.actualTimes[retryIndex] <= maxRetryTimeout) {
+            deviceDataSet.push({
+              x: chartData.actualTimes[retryIndex],
+              y: deviceIndex
+            });
+            retryIndex++;
+          }
+
+          deviceData.push({
+            data: deviceDataSet
+          });
+        }
+
+        var c3 = Chart.Scatter(deviceRetriesOverTimeChart, {
+            data: {
+                labels: timeScale,
+                datasets: deviceData
+            },
+            options: {
+              legend: {
+                display: false
+              },
+              scales: {
+                xAxes: [{
+                  type: 'linear',
+                  position: 'bottom'
+                }],
+                yAxes: [{
+                    ticks: {
+                        min: 0,
+                        max: DEVICE_COUNT
+                    }
+                }]
+              }
+            }
+        });
+      }
+      loadCharts();
+    </script>
+  </body>
+</html>
